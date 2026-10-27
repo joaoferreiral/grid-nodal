@@ -28,6 +28,7 @@
 - [Glifos prontos](#glifos-prontos)
 - [Rodando localmente](#rodando-localmente)
 - [Estrutura do projeto](#estrutura-do-projeto)
+- [Licença](#licença)
 
 ## O que é
 
@@ -182,9 +183,14 @@ Em **Settings → Pages**, escolha a branch `main` e a pasta `/ (root)`. O edito
 grid-nodal/
 ├── index.html          # editor completo (HTML, CSS e JS em um arquivo)
 ├── README.md
+├── LICENSE
 └── docs/
     └── images/         # capturas e SVGs de exemplo usados neste README
 ```
+
+## Licença
+
+Distribuído sob a licença MIT. Você pode usar, copiar, modificar e distribuir o código, inclusive em projetos comerciais, desde que mantenha o aviso de copyright. Veja o arquivo [`LICENSE`](LICENSE).
 
 ## Créditos
 
