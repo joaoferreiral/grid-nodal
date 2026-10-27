@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Editor de letras em grid de células circulares, com cantos arredondados e pontes diagonais entre nós. Exporta SVG e PNG.">
+<title>Grid Nodal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: oficina tipográfica. Bancada (canvas) à esquerda, régua de controles à direita; monocromático como o próprio grid. */
+:root{
+  --bg:#f1f1ef; --panel:#ffffff; --line:#d9d9d5; --fg:#141414; --muted:#6f6f6b; --inv:#ffffff; --hover:#ebebe8;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f0f0f; --panel:#171717; --line:#2a2a2a; --fg:#ececec; --muted:#8a8a86; --inv:#0f0f0f; --hover:#202020; color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f0f0f; --panel:#171717; --line:#2a2a2a; --fg:#ececec; --muted:#8a8a86; --inv:#0f0f0f; --hover:#202020; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand svg{flex:none}
+h1{font-size:20px;font-weight:600;margin:0;letter-spacing:-0.01em}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.word{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lbl{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+input[type=text]{font:500 15px var(--mono);background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:160px}
+input[type=text]:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+button{font:500 13px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 11px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--hover)}
+button.primary{background:var(--fg);color:var(--inv);border-color:var(--fg)}
+button.primary:hover{opacity:.88}
+button.sm{padding:4px 8px;font-size:12px}
+button:disabled{opacity:.4;cursor:default}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+@media (max-width:920px){.main{grid-template-columns:minmax(0,1fr)}}
+.stage{display:flex;flex-direction:column;gap:12px;min-width:0}
+.canvas{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.canvas-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line)}
+.canvas-bar .hint{color:var(--muted);font-size:12px}
+.canvas-bar .tools{display:flex;gap:6px}
+#editor{display:block;width:100%;height:auto;touch-action:none;user-select:none;cursor:crosshair}
+
+.cards{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.card{flex:none;width:250px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.card.sel{border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--fg)}
+.card-top{display:flex;align-items:center;gap:8px}
+.card-top input{width:44px;text-align:center;font-size:18px;padding:4px}
+.card-top .vn{font-size:12px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.card .row{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.card .row .n{font-family:var(--mono);font-size:12px;min-width:20px;text-align:center}
+.add-card{flex:none;width:120px;display:flex;flex-direction:column;gap:6px;justify-content:center}
+
+.previews{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.previews{grid-template-columns:1fr}}
+.pv{border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.pv .pv-art{display:flex;align-items:center;justify-content:center;padding:28px 20px;min-height:150px}
+.pv .pv-art svg{max-width:100%;height:auto}
+.pv .pv-cap{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-top:1px solid var(--line);background:var(--panel)}
+.pv-small{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+
+aside{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column}
+aside section{padding:14px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--line)}
+aside section:last-child{border-bottom:0}
+aside h2{margin:0;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px}
+.ctl-h output{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--fg)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.chk input{accent-color:var(--fg);width:16px;height:16px}
+.stepper{display:flex;align-items:center;justify-content:space-between;font-size:13px}
+.stepper div{display:flex;align-items:center;gap:6px}
+.stepper .n{font-family:var(--mono);min-width:22px;text-align:center}
+.swatches{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sw{display:flex;align-items:center;gap:8px;font-size:12px}
+.sw input[type=color]{width:30px;height:26px;border:1px solid var(--line);border-radius:5px;padding:0;background:none;cursor:pointer}
+.presets{display:flex;gap:6px;flex-wrap:wrap}
+.preset{display:flex;align-items:center;gap:6px}
+.preset i{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid var(--line)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.note{font-size:12px;color:var(--muted);margin:0}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--inv);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+.copybox{display:flex;flex-direction:column;gap:6px}
+.copybox textarea{width:100%;height:120px;font:11px var(--mono);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 200 200" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="4"><circle cx="50" cy="50" r="50"/><circle cx="150" cy="150" r="50"/><circle cx="150" cy="50" r="50"/><circle cx="50" cy="150" r="50"/></g><path fill="currentColor" d="M150 0A50 50 0 0 1 200 50 50 50 0 0 1 150 100 50 50 0 0 0 100 150 50 50 0 0 1 50 200 50 50 0 0 1 0 150 50 50 0 0 1 50 100 50 50 0 0 0 100 50 50 50 0 0 1 150 0Z"/></svg>
+      <div>
+        <h1>Grid Nodal</h1>
+        <p class="sub">Letras montadas em células circulares, com cantos arredondados e pontes diagonais entre nós.</p>
+      </div>
+    </div>
+    <form class="word" id="wordForm">
+      <label class="lbl" for="wordIn">Palavra</label>
+      <input type="text" id="wordIn" value="grid" maxlength="14" autocomplete="off" spellcheck="false">
+      <button class="primary" type="submit">Montar</button>
+    </form>
+  </header>
+
+  <div class="main">
+    <div class="stage">
+      <div class="canvas">
+        <div class="canvas-bar">
+          <span class="hint">Clique e arraste para pintar. Botão direito ou Alt apaga.</span>
+          <div class="tools">
+            <button class="sm" id="undoBtn" title="Desfazer (Ctrl+Z)">Desfazer</button>
+            <button class="sm" id="redoBtn" title="Refazer (Ctrl+Shift+Z)">Refazer</button>
+          </div>
+        </div>
+        <svg id="editor" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <div class="cards" id="cards"></div>
+
+      <div class="previews">
+        <div class="pv"><div class="pv-art" id="pvPos"></div><div class="pv-cap"><span class="lbl">Positivo</span><span class="lbl">sem guias</span></div></div>
+        <div class="pv"><div class="pv-art" id="pvNeg"></div><div class="pv-cap"><span class="lbl">Negativo</span><span class="lbl">cores invertidas</span></div></div>
+      </div>
+      <div class="pv"><div class="pv-art pv-small" id="pvSmall"></div><div class="pv-cap"><span class="lbl">Teste de redução</span><span class="lbl">48 · 32 · 20 · 14 px de altura</span></div></div>
+    </div>
+
+    <aside>
+      <section>
+        <h2>Forma</h2>
+        <div class="ctl">
+          <div class="ctl-h"><label for="rOut">Arredondamento externo</label><output id="rOutV"></output></div>
+          <input type="range" id="rOut" min="0" max="100" step="5">
+        </div>
+        <div class="ctl">
+          <div class="ctl-h"><label for="rIn">Arredondamento interno</label><output id="rInV"></output></div>
+          <input type="range" id="rIn" min="0" max="100" step="5">
+        </div>
+        <label class="chk"><input type="checkbox" id="bridge"> Pontes diagonais entre nós</label>
+        <p class="note">Com as pontes ligadas, duas células que se tocam só pela quina se unem num pescoço, como no símbolo do Nodes.</p>
+      </section>
+      <section>
+        <h2>Grade</h2>
+        <div class="stepper"><span>Linhas</span><div><button class="sm" id="rowM" aria-label="Menos linhas">−</button><span class="n" id="rowN"></span><button class="sm" id="rowP" aria-label="Mais linhas">+</button></div></div>
+        <div class="ctl">
+          <div class="ctl-h"><label for="gap">Espaço entre letras</label><output id="gapV"></output></div>
+          <input type="range" id="gap" min="0" max="2" step="0.25">
+        </div>
+        <label class="chk"><input type="checkbox" id="grid"> Linhas da grade</label>
+        <label class="chk"><input type="checkbox" id="circles"> Círculos das células</label>
+        <label class="chk"><input type="checkbox" id="guidesTop"> Guias por cima da letra</label>
+        <div class="ctl">
+          <div class="ctl-h"><label for="guideOp">Opacidade das guias</label><output id="guideOpV"></output></div>
+          <input type="range" id="guideOp" min="10" max="100" step="5">
+        </div>
+      </section>
+      <section>
+        <h2>Cores</h2>
+        <div class="presets" id="presets"></div>
+        <div class="swatches">
+          <label class="sw"><input type="color" id="cBg"> Fundo</label>
+          <label class="sw"><input type="color" id="cBoard"> Caixa</label>
+          <label class="sw"><input type="color" id="cFg"> Letra</label>
+          <label class="sw"><input type="color" id="cGuide"> Guias</label>
+        </div>
+      </section>
+      <section>
+        <h2>Exportar</h2>
+        <label class="chk"><input type="checkbox" id="exBg"> Incluir fundo</label>
+        <span class="lbl">Só a logo</span>
+        <div class="btns">
+          <button class="primary" id="copySvg">Copiar SVG</button>
+          <button id="dlSvg">Baixar SVG</button>
+          <button id="dlPng">Baixar PNG</button>
+        </div>
+        <span class="lbl">Com o grid em volta</span>
+        <div class="btns">
+          <button class="primary" id="copySvgGrid">Copiar SVG</button>
+          <button id="dlSvgGrid">Baixar SVG</button>
+          <button id="dlPngGrid">Baixar PNG</button>
+        </div>
+        <p class="note">Cada letra sai como um contorno limpo, sem sobreposições. A versão com grid traz o fundo, as linhas e os círculos em camadas separadas, com as cores e guias que estão na tela. Cole direto no Figma com Ctrl+V.</p>
+        <div class="copybox" id="copyBox" hidden>
+          <span class="note">Não deu para copiar automaticamente. Selecione o texto abaixo e copie:</span>
+          <textarea id="copyTa" readonly></textarea>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(()=>{
+const S = 100, H2 = S/2;
+const $ = id => document.getElementById(id);
+
+/* ---------- biblioteca de glifos (5 linhas) ---------- */
+const LIB = {
+  z:[{n:'Nós em diagonal',c:['11111','00010','00100','01000','11111']},
+     {n:'S espelhado',c:['11110','00001','01110','10000','01111']},
+     {n:'Degraus grossos',c:['11111','00011','01110','11000','11111']},
+     {n:'Cantos vazados',c:['01111','00010','00100','01000','11110']}],
+  i:[{n:'Pingo e base',c:['010','000','110','010','111']},
+     {n:'Haste simples',c:['010','000','010','010','010']},
+     {n:'Gancho',c:['010','000','110','010','011']}],
+  l:[{n:'Topo e base',c:['110','010','010','010','011']},
+     {n:'Cauda em nó',c:['110','010','010','010','001']},
+     {n:'Haste simples',c:['010','010','010','010','010']}],
+  g:[{n:'Gancho fechado',c:['01111','10001','01111','00001','11110']},
+     {n:'G aberto',c:['01110','10000','10011','10001','01111']}],
+  r:[{n:'Ombro em nó',c:['11110','10001','10000','10000','10000']},
+     {n:'Estreito',c:['0111','1000','1000','1000','1000']}],
+  y:[{n:'U com cauda',c:['10001','10001','01111','00001','11110']},
+     {n:'Y em nós',c:['10001','10001','01110','00100','00100']},
+     {n:'Y aberto',c:['10001','10001','10001','01111','00001']}],
+  a:[{n:'Contraforma alta',c:['01110','10001','10001','11111','10001']},
+     {n:'Contraforma baixa',c:['01110','10001','11111','10001','10001']}],
+  n:[{n:'Arco',c:['01110','10001','10001','10001','10001']}],
+  o:[{n:'Anel',c:['01110','10001','10001','10001','01110']}],
+  d:[{n:'Haste alta',c:['00001','00001','01111','10001','01111']},
+     {n:'Base reta',c:['01110','10001','10001','10001','11110']}],
+  e:[{n:'Três barras',c:['01111','10000','11110','10000','01111']}],
+  s:[{n:'Barras ligadas',c:['01111','10000','01110','00001','11110']}],
+  '*':[{n:'Símbolo de nó',c:['00001','00010','00000','00000','00000']}],
+};
+
+/* ---------- estado ---------- */
+const DEFAULT = {
+  rows:5, gap:0.5, rOut:1, rIn:1, bridge:true, grid:true, circles:true, guidesTop:false, guideOp:0.5,
+  colors:{bg:'#141414',board:'#141414',fg:'#ffffff',guide:'#8c8c8c'},
+  exBg:false, sel:0, word:'grid', glyphs:[]
+};
+const PRESETS = [
+  {n:'Noite', c:{bg:'#141414',board:'#141414',fg:'#ffffff',guide:'#8c8c8c'}},
+  {n:'Papel', c:{bg:'#f2f1ed',board:'#f2f1ed',fg:'#0a0a0a',guide:'#9a9a96'}},
+  {n:'Tinta', c:{bg:'#ffffff',board:'#ffffff',fg:'#000000',guide:'#b5b5b5'}},
+  {n:'Contraste', c:{bg:'#141414',board:'#000000',fg:'#ffffff',guide:'#ffffff'}},
+];
+
+function libGlyph(ch, v, rows){
+  const list = LIB[ch];
+  if(!list){ return {ch, v:0, cols: ch===' ' ? 2 : 5, cells: blankCells(ch===' '?2:5, rows)}; }
+  const vi = ((v % list.length) + list.length) % list.length;
+  const src = list[vi].c, cols = src[0].length;
+  const cells = [];
+  for(let r=0;r<rows;r++){ cells.push(Array.from({length:cols},(_,c)=> src[r] ? +src[r][c] : 0)); }
+  return {ch, v:vi, cols, cells};
+}
+function blankCells(cols, rows){ return Array.from({length:rows},()=>Array(cols).fill(0)); }
+function fromWord(w, rows){ return [...w.toLowerCase()].map(ch=>libGlyph(ch,0,rows)); }
+
+let st;
+try{ const raw = localStorage.getItem('grid-nodal-v2'); st = raw ? JSON.parse(raw) : null; }catch(e){ st = null; }
+if(!st || !Array.isArray(st.glyphs) || !st.glyphs.length){ st = JSON.parse(JSON.stringify(DEFAULT)); st.glyphs = fromWord('grid', 5); }
+st = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), st);
+function save(){ try{ localStorage.setItem('grid-nodal-v2', JSON.stringify(st)); }catch(e){} }
+
+/* ---------- histórico ---------- */
+let past = [], future = [];
+const snap = () => JSON.stringify({rows:st.rows, glyphs:st.glyphs, sel:st.sel});
+function pushHist(){ past.push(snap()); if(past.length>200) past.shift(); future = []; updUndo(); }
+function restore(s){ const o = JSON.parse(s); st.rows=o.rows; st.glyphs=o.glyphs; st.sel=Math.min(o.sel, o.glyphs.length-1); }
+function undo(){ if(!past.length) return; future.push(snap()); restore(past.pop()); fullRender(); }
+function redo(){ if(!future.length) return; past.push(snap()); restore(future.pop()); fullRender(); }
+function updUndo(){ $('undoBtn').disabled = !past.length; $('redoBtn').disabled = !future.length; }
+
+/* ---------- geometria: união limpa das peças de quadrante ---------- */
+const fmt = p => (+p[0].toFixed(2))+' '+(+p[1].toFixed(2));
+function glyphPath(g, rows, ox, oy){
+  const RO = st.rOut*H2, RI = st.rIn*H2, br = st.bridge;
+  const F = (c,r)=> c>=0 && r>=0 && c<g.cols && r<rows && g.cells[r][c]===1;
+  const K = p => Math.round(p[0]*100)+','+Math.round(p[1]*100);
+  const store = new Map(); let aid = 0;
+  const bps = [RO, RI];
+  const put = e => {
+    if(e.c){ store.set('a'+(aid++), e); return; }
+    const k = K(e.a)+'>'+K(e.b), rk = K(e.b)+'>'+K(e.a);
+    if(store.has(rk)) store.delete(rk); else store.set(k, e);
+  };
+  const dist = (p,V) => Math.abs(p[0]-V[0]) + Math.abs(p[1]-V[1]);
+  function straight(a, b, V){
+    if(dist(a,b) < 1e-6) return;
+    if(!V){ put({a,b}); return; }
+    const da = dist(a,V), db = dist(b,V), far = da>db ? a : b, dm = Math.max(da,db);
+    const u = [(far[0]-V[0])/dm, (far[1]-V[1])/dm];
+    const lo = Math.min(da,db), hi = dm;
+    const cuts = bps.filter(d => d>lo+1e-6 && d<hi-1e-6).sort((x,y)=>x-y);
+    if(da>db) cuts.reverse();
+    let p = a;
+    for(const d of [...new Set(cuts)]){ const q=[V[0]+u[0]*d, V[1]+u[1]*d]; put({a:p,b:q}); p=q; }
+    put({a:p,b});
+  }
+  function piece(list){
+    let A = 0; for(const e of list) A += e.a[0]*e.b[1] - e.b[0]*e.a[1];
+    if(A < 0) list = list.slice().reverse().map(e => ({...e, a:e.b, b:e.a}));
+    for(const e of list){ if(e.c) put({a:e.a,b:e.b,c:e.c,R:e.R}); else straight(e.a,e.b,e.V); }
+  }
+  const Q = [[-1,-1],[1,-1],[1,1],[-1,1]];
+  for(let r=0;r<rows;r++) for(let c=0;c<g.cols;c++){
+    const cx = ox+(c+.5)*S, cy = oy+(r+.5)*S, f = F(c,r);
+    for(const [dx,dy] of Q){
+      const Hn = F(c+dx,r), Vn = F(c,r+dy), D = F(c+dx,r+dy);
+      const C=[cx,cy], V=[cx+dx*H2, cy+dy*H2], A=[cx,V[1]], B=[V[0],cy];
+      if(f){
+        const convex = !Hn && !Vn && (br ? !D : true);
+        if(convex && RO>0){
+          const A2=[V[0]-dx*RO,V[1]], B2=[V[0],V[1]-dy*RO], cc=[V[0]-dx*RO,V[1]-dy*RO];
+          piece([{a:C,b:A},{a:A,b:A2,V},{a:A2,b:B2,c:cc,R:RO},{a:B2,b:B,V},{a:B,b:C}]);
+        } else piece([{a:C,b:A},{a:A,b:V,V},{a:V,b:B,V},{a:B,b:C}]);
+      } else {
+        const concave = Hn && Vn && (br ? true : D);
+        if(concave && RI>0){
+          const P1=[V[0]-dx*RI,V[1]], P2=[V[0],V[1]-dy*RI], cc=[V[0]-dx*RI,V[1]-dy*RI];
+          piece([{a:V,b:P1,V},{a:P1,b:P2,c:cc,R:RI},{a:P2,b:V,V}]);
+        }
+      }
+    }
+  }
+  const edges = [...store.values()];
+  const byStart = new Map();
+  for(const e of edges){ const k=K(e.a); if(!byStart.has(k)) byStart.set(k,[]); byStart.get(k).push(e); }
+  const used = new Set(); let d = '';
+  for(const e0 of edges){
+    if(used.has(e0)) continue;
+    const loop = []; let e = e0; const sk = K(e0.a); let guard = 0;
+    while(e && !used.has(e) && guard++ < 50000){
+      used.add(e); loop.push(e);
+      const k = K(e.b); if(k === sk) break;
+      e = (byStart.get(k)||[]).find(x => !used.has(x));
+    }
+    d += emit(loop);
+  }
+  return d;
+}
+function emit(loop){
+  const out = [];
+  const col = (x,y) => { const v1=[x.b[0]-x.a[0],x.b[1]-x.a[1]], v2=[y.b[0]-y.a[0],y.b[1]-y.a[1]];
+    return Math.abs(v1[0]*v2[1]-v1[1]*v2[0])<1e-6 && (v1[0]*v2[0]+v1[1]*v2[1])>0; };
+  for(const e of loop){
+    const last = out[out.length-1];
+    if(!e.c && last && !last.c && col(last,e)){ last.b = e.b; continue; }
+    out.push({...e});
+  }
+  if(out.length>2){ const f=out[0], l=out[out.length-1]; if(!f.c && !l.c && col(l,f)){ f.a = l.a; out.pop(); } }
+  if(!out.length) return '';
+  let s = 'M'+fmt(out[0].a);
+  out.forEach((e,i) => {
+    if(e.c){
+      const ax=e.a[0]-e.c[0], ay=e.a[1]-e.c[1], bx=e.b[0]-e.c[0], by=e.b[1]-e.c[1];
+      const sw = (ax*by - ay*bx) > 0 ? 1 : 0, R = +e.R.toFixed(2);
+      s += 'A'+R+' '+R+' 0 0 '+sw+' '+fmt(e.b);
+    } else if(i < out.length-1) s += 'L'+fmt(e.b);
+  });
+  return s+'Z';
+}
+
+/* ---------- montagem do SVG ---------- */
+function layout(){
+  const gap = st.gap*S, m = S*0.5; let x = m; const xs = [];
+  st.glyphs.forEach((g,i)=>{ xs.push(x); x += g.cols*S + (i<st.glyphs.length-1 ? gap : 0); });
+  return {xs, W: x+m, H: st.rows*S + m*2, m};
+}
+function guideMarkup(g, ox, oy, sw, nonScale){
+  const w = g.cols*S, h = st.rows*S, ve = nonScale ? ' vector-effect="non-scaling-stroke"' : '';
+  let s = '';
+  if(st.grid){
+    for(let c=0;c<=g.cols;c++) s += `<line x1="${ox+c*S}" y1="${oy}" x2="${ox+c*S}" y2="${oy+h}"${ve}/>`;
+    for(let r=0;r<=st.rows;r++) s += `<line x1="${ox}" y1="${oy+r*S}" x2="${ox+w}" y2="${oy+r*S}"${ve}/>`;
+  }
+  if(st.circles){
+    for(let r=0;r<st.rows;r++) for(let c=0;c<g.cols;c++) s += `<circle cx="${ox+(c+.5)*S}" cy="${oy+(r+.5)*S}" r="${H2}"${ve}/>`;
+  }
+  return s ? `<g fill="none" stroke="${st.colors.guide}" stroke-opacity="${st.guideOp}" stroke-width="${sw}">${s}</g>` : '';
+}
+function buildSVG({guides, bg, editor, colors}){
+  const col = colors || st.colors;
+  const L = layout(); const oy = L.m;
+  const saved = st.colors; st.colors = col;
+  let body = '';
+  if(bg) body += `<rect width="${L.W}" height="${L.H}" fill="${col.bg}"/>`;
+  st.glyphs.forEach((g,i)=>{
+    const ox = L.xs[i];
+    if(bg && col.board !== col.bg) body += `<rect x="${ox}" y="${oy}" width="${g.cols*S}" height="${st.rows*S}" fill="${col.board}"/>`;
+    const gm = guides ? guideMarkup(g, ox, oy, editor ? 1 : 1.2, editor) : '';
+    if(gm && !st.guidesTop) body += gm;
+    const d = glyphPath(g, st.rows, ox, oy);
+    if(d) body += `<path${editor ? '' : ` id="${(g.ch||'').replace(/[^a-z0-9]/gi,'') || 'glifo'}-${i+1}"`} d="${d}" fill="${col.fg}"/>`;
+    if(gm && st.guidesTop) body += gm;
+  });
+  st.colors = saved;
+  return {body, W:L.W, H:L.H, L};
+}
+
+/* ---------- render ---------- */
+const editor = $('editor');
+let hover = null;
+function renderEditor(){
+  const {body, W, H, L} = buildSVG({guides:true, bg:true, editor:true});
+  let extra = '';
+  const g = st.glyphs[st.sel];
+  if(g){ const x = L.xs[st.sel]; extra += `<rect x="${x-10}" y="${L.m-10}" width="${g.cols*S+20}" height="${st.rows*S+20}" fill="none" style="stroke:${st.colors.fg}" stroke-opacity=".5" stroke-dasharray="6 6" vector-effect="non-scaling-stroke"/>`; }
+  if(hover){ const x = L.xs[hover.i] + hover.c*S, y = L.m + hover.r*S;
+    extra += `<rect x="${x}" y="${y}" width="${S}" height="${S}" fill="${st.colors.fg}" fill-opacity=".14" pointer-events="none"/>`; }
+  editor.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  editor.innerHTML = body + extra;
+}
+function renderPreviews(){
+  const pos = buildSVG({guides:false, bg:false, editor:false});
+  const neg = {bg:st.colors.fg, board:st.colors.fg, fg:st.colors.bg, guide:st.colors.guide};
+  const negB = buildSVG({guides:false, bg:false, editor:false, colors:neg});
+  const vb = `${pos.L.m} ${pos.L.m} ${pos.W-pos.L.m*2} ${st.rows*S}`;
+  $('pvPos').style.background = st.colors.bg;
+  $('pvPos').innerHTML = `<svg viewBox="${vb}" width="${Math.min(420,(pos.W-pos.L.m*2)/st.rows/S*64)}">${pos.body}</svg>`;
+  $('pvNeg').style.background = st.colors.fg;
+  $('pvNeg').innerHTML = `<svg viewBox="${vb}" width="${Math.min(420,(pos.W-pos.L.m*2)/st.rows/S*64)}">${negB.body}</svg>`;
+  const ratio = (pos.W-pos.L.m*2)/(st.rows*S);
+  $('pvSmall').style.background = st.colors.bg;
+  $('pvSmall').innerHTML = [48,32,20,14].map(h=>`<svg viewBox="${vb}" width="${(h*ratio).toFixed(1)}" height="${h}">${pos.body}</svg>`).join('');
+}
+function renderCards(){
+  const box = $('cards');
+  box.innerHTML = st.glyphs.map((g,i)=>{
+    const list = LIB[g.ch]; const vn = list ? list[g.v].n + (list.length>1 ? ` · ${g.v+1}/${list.length}` : '') : 'Desenho livre';
+    return `<div class="card${i===st.sel?' sel':''}" data-i="${i}">
+      <div class="card-top"><input type="text" id="ch-${i}" maxlength="1" value="${g.ch===' '?'':g.ch.replace(/"/g,'')}" aria-label="Letra ${i+1}"><span class="vn" title="${vn}">${vn}</span></div>
+      <div class="row"><button class="sm" data-act="prev" ${list&&list.length>1?'':'disabled'} aria-label="Variante anterior">‹</button><button class="sm" data-act="next" ${list&&list.length>1?'':'disabled'} aria-label="Próxima variante">›</button>
+        <span class="lbl" style="margin-left:6px">col</span><button class="sm" data-act="colm" aria-label="Menos colunas">−</button><span class="n">${g.cols}</span><button class="sm" data-act="colp" aria-label="Mais colunas">+</button></div>
+      <div class="row"><button class="sm" data-act="mirror">Espelhar</button><button class="sm" data-act="invert">Inverter</button><button class="sm" data-act="clear">Limpar</button></div>
+      <div class="row"><button class="sm" data-act="left" ${i===0?'disabled':''} aria-label="Mover para a esquerda">←</button><button class="sm" data-act="right" ${i===st.glyphs.length-1?'disabled':''} aria-label="Mover para a direita">→</button><button class="sm" data-act="dup">Duplicar</button><button class="sm" data-act="del" ${st.glyphs.length<2?'disabled':''}>Remover</button></div>
+    </div>`;
+  }).join('') + `<div class="add-card"><button data-act="add">+ Letra vazia</button><button data-act="addMark">+ Símbolo</button></div>`;
+}
+function renderControls(){
+  $('rOut').value = st.rOut*100; $('rOutV').textContent = Math.round(st.rOut*100)+'%';
+  $('rIn').value = st.rIn*100; $('rInV').textContent = Math.round(st.rIn*100)+'%';
+  $('bridge').checked = st.bridge; $('grid').checked = st.grid; $('circles').checked = st.circles; $('guidesTop').checked = st.guidesTop;
+  $('gap').value = st.gap; $('gapV').textContent = st.gap.toFixed(2).replace(/\.?0+$/,'')+' cél.';
+  $('guideOp').value = st.guideOp*100; $('guideOpV').textContent = Math.round(st.guideOp*100)+'%';
+  $('rowN').textContent = st.rows;
+  $('cBg').value = st.colors.bg; $('cBoard').value = st.colors.board; $('cFg').value = st.colors.fg; $('cGuide').value = st.colors.guide;
+  $('exBg').checked = st.exBg;
+}
+function render(){ renderEditor(); renderPreviews(); save(); }
+function fullRender(){ renderControls(); renderCards(); render(); updUndo(); }
+
+/* ---------- presets ---------- */
+$('presets').innerHTML = PRESETS.map((p,i)=>`<button class="sm preset" data-p="${i}"><i style="background:${p.c.bg}"></i><i style="background:${p.c.fg}"></i>${p.n}</button>`).join('');
+$('presets').addEventListener('click', e=>{ const b = e.target.closest('[data-p]'); if(!b) return; st.colors = {...PRESETS[+b.dataset.p].c}; renderControls(); render(); });
+
+/* ---------- edição no canvas ---------- */
+function hit(e){
+  const pt = editor.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const m = editor.getScreenCTM(); if(!m) return null;
+  const p = pt.matrixTransform(m.inverse());
+  const L = layout();
+  for(let i=0;i<st.glyphs.length;i++){
+    const g = st.glyphs[i], x0 = L.xs[i];
+    if(p.x>=x0 && p.x<x0+g.cols*S && p.y>=L.m && p.y<L.m+st.rows*S) return {i, c:Math.floor((p.x-x0)/S), r:Math.floor((p.y-L.m)/S)};
+  }
+  return null;
+}
+let painting = false, paintVal = 1, lastKey = '';
+editor.addEventListener('contextmenu', e => e.preventDefault());
+editor.addEventListener('pointerdown', e=>{
+  const h = hit(e); if(!h) return;
+  e.preventDefault();
+  editor.setPointerCapture(e.pointerId);
+  pushHist();
+  const g = st.glyphs[h.i];
+  paintVal = (e.button===2 || e.altKey) ? 0 : (g.cells[h.r][h.c] ? 0 : 1);
+  painting = true; lastKey = '';
+  const selChanged = st.sel !== h.i; st.sel = h.i;
+  apply(h);
+  if(selChanged) renderCards();
+});
+editor.addEventListener('pointermove', e=>{
+  const h = hit(e);
+  if(painting){ if(h) apply(h); return; }
+  const k = h ? h.i+'-'+h.c+'-'+h.r : '';
+  if(k !== (hover ? hover.i+'-'+hover.c+'-'+hover.r : '')){ hover = h; renderEditor(); }
+});
+editor.addEventListener('pointerleave', ()=>{ if(!painting && hover){ hover = null; renderEditor(); } });
+const endPaint = ()=>{ if(painting){ painting = false; render(); } };
+editor.addEventListener('pointerup', endPaint);
+editor.addEventListener('pointercancel', endPaint);
+function apply(h){
+  const k = h.i+'-'+h.c+'-'+h.r; if(k===lastKey) return; lastKey = k;
+  const g = st.glyphs[h.i]; if(g.cells[h.r][h.c] === paintVal){ return; }
+  g.cells[h.r][h.c] = paintVal; hover = h; renderEditor();
+}
+
+/* ---------- cartões das letras ---------- */
+$('cards').addEventListener('click', e=>{
+  const b = e.target.closest('[data-act]'); const card = e.target.closest('.card');
+  if(!b){ if(card && +card.dataset.i !== st.sel){ st.sel = +card.dataset.i; renderCards(); renderEditor(); save(); } return; }
+  const act = b.dataset.act;
+  if(act==='add' || act==='addMark'){
+    pushHist();
+    st.glyphs.push(act==='add' ? {ch:'', v:0, cols:5, cells:blankCells(5, st.rows)} : libGlyph('*',0,st.rows));
+    st.sel = st.glyphs.length-1; fullRender(); return;
+  }
+  const i = +card.dataset.i, g = st.glyphs[i];
+  pushHist(); st.sel = i;
+  if(act==='prev' || act==='next'){ const ng = libGlyph(g.ch, g.v + (act==='next'?1:-1), st.rows); st.glyphs[i] = ng; }
+  else if(act==='colp'){ if(g.cols<12){ g.cols++; g.cells.forEach(row=>row.push(0)); } }
+  else if(act==='colm'){ if(g.cols>1){ g.cols--; g.cells.forEach(row=>row.pop()); } }
+  else if(act==='mirror'){ g.cells.forEach(row=>row.reverse()); }
+  else if(act==='invert'){ g.cells = g.cells.map(row=>row.map(v=>v?0:1)); }
+  else if(act==='clear'){ g.cells = blankCells(g.cols, st.rows); }
+  else if(act==='left' && i>0){ [st.glyphs[i-1], st.glyphs[i]] = [st.glyphs[i], st.glyphs[i-1]]; st.sel = i-1; }
+  else if(act==='right' && i<st.glyphs.length-1){ [st.glyphs[i+1], st.glyphs[i]] = [st.glyphs[i], st.glyphs[i+1]]; st.sel = i+1; }
+  else if(act==='dup'){ st.glyphs.splice(i+1, 0, JSON.parse(JSON.stringify(g))); st.sel = i+1; }
+  else if(act==='del' && st.glyphs.length>1){ st.glyphs.splice(i,1); st.sel = Math.max(0, i-1); }
+  fullRender();
+});
+$('cards').addEventListener('change', e=>{
+  const inp = e.target; if(!inp.id || !inp.id.startsWith('ch-')) return;
+  const i = +inp.id.slice(3), ch = (inp.value||'').toLowerCase();
+  pushHist();
+  if(LIB[ch]) st.glyphs[i] = libGlyph(ch, 0, st.rows); else st.glyphs[i].ch = ch;
+  st.sel = i; fullRender();
+});
+
+/* ---------- controles ---------- */
+$('wordForm').addEventListener('submit', e=>{
+  e.preventDefault(); const w = $('wordIn').value.trim(); if(!w) return;
+  pushHist(); st.word = w; st.glyphs = fromWord(w, st.rows); st.sel = 0; fullRender();
+});
+const bindRange = (id, fn) => $(id).addEventListener('input', e=>{ fn(+e.target.value); renderControls(); render(); });
+bindRange('rOut', v=> st.rOut = v/100);
+bindRange('rIn', v=> st.rIn = v/100);
+bindRange('gap', v=> st.gap = v);
+bindRange('guideOp', v=> st.guideOp = v/100);
+const bindChk = (id, key) => $(id).addEventListener('change', e=>{ st[key] = e.target.checked; render(); });
+bindChk('bridge','bridge'); bindChk('grid','grid'); bindChk('circles','circles'); bindChk('guidesTop','guidesTop');
+bindChk('exBg','exBg');
+[['cBg','bg'],['cBoard','board'],['cFg','fg'],['cGuide','guide']].forEach(([id,k])=>{
+  $(id).addEventListener('input', e=>{ st.colors[k] = e.target.value; render(); });
+});
+function setRows(n){
+  if(n<3 || n>12) return; pushHist();
+  st.glyphs.forEach(g=>{ while(g.cells.length<n) g.cells.push(Array(g.cols).fill(0)); while(g.cells.length>n) g.cells.pop(); });
+  st.rows = n; fullRender();
+}
+$('rowM').addEventListener('click', ()=> setRows(st.rows-1));
+$('rowP').addEventListener('click', ()=> setRows(st.rows+1));
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
+document.addEventListener('keydown', e=>{
+  if(e.target.matches('input[type=text],textarea')) return;
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); }
+});
+
+/* ---------- exportação ---------- */
+function exportSVG(withGrid){
+  // com grid: sempre com fundo e guias, mesmo se as guias estiverem desligadas na tela
+  const keep = {grid:st.grid, circles:st.circles};
+  if(withGrid && !st.grid && !st.circles){ st.grid = true; st.circles = true; }
+  const {body, W, H} = buildSVG({guides:!!withGrid, bg:withGrid ? true : st.exBg, editor:false});
+  Object.assign(st, keep);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${body}</svg>`;
+}
+const fileName = (ext, withGrid) => 'logo-' + (st.glyphs.map(g=>g.ch).join('').replace(/[^a-z0-9]/gi,'') || 'grid') + (withGrid ? '-com-grid' : '') + '.' + ext;
+let toastT;
+function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('on'), 2200); }
+const copySvg = withGrid => {
+  const svg = exportSVG(withGrid);
+  const fallback = ()=>{ $('copyBox').hidden = false; const ta = $('copyTa'); ta.value = svg; ta.focus(); ta.select(); };
+  try{
+    navigator.clipboard.writeText(svg).then(()=>{ $('copyBox').hidden = true; toast('SVG copiado. Cole no Figma com Ctrl+V.'); }, fallback);
+  }catch(err){ fallback(); }
+};
+$('copySvg').addEventListener('click', ()=> copySvg(false));
+$('copySvgGrid').addEventListener('click', ()=> copySvg(true));
+let dl = null;
+const getDl = async ()=>{ if(dl) return dl; try{ dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; }catch(e){ dl = null; } return dl; };
+async function offer(filename, data){
+  const d = await getDl();
+  if(!d){
+    if(window.claude){ toast('Download indisponível aqui. Use Copiar SVG.'); return; }
+    // fora do Claude (GitHub Pages, arquivo local): download comum do navegador
+    const blob = data instanceof Blob ? data : new Blob([data], {type: filename.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    return;
+  }
+  try{ await d.save({filename, data}); }
+  catch(err){ if(err && err.code==='declined') return; toast('Não foi possível baixar. Use Copiar SVG.'); }
+}
+$('dlSvg').addEventListener('click', ()=> offer(fileName('svg'), exportSVG(false)));
+$('dlSvgGrid').addEventListener('click', ()=> offer(fileName('svg', true), exportSVG(true)));
+$('dlPng').addEventListener('click', ()=> pngExport(false));
+$('dlPngGrid').addEventListener('click', ()=> pngExport(true));
+function pngExport(withGrid){
+  const svg = exportSVG(withGrid); const {W, H} = buildSVG({guides:false,bg:false,editor:false});
+  const scale = Math.max(1, 3000 / W);
+  const img = new Image();
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  img.onload = ()=>{
+    const cv = document.createElement('canvas'); cv.width = Math.round(W*scale); cv.height = Math.round(H*scale);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+    cv.toBlob(b=>{ if(b) offer(fileName('png', withGrid), b); }, 'image/png');
+  };
+  img.onerror = ()=>{ URL.revokeObjectURL(url); toast('Não foi possível gerar o PNG.'); };
+  img.src = url;
+}
+getDl().then(d=>{ if(!d && window.claude){ ['dlSvg','dlPng','dlSvgGrid','dlPngGrid'].forEach(id=>$(id).hidden = true); } });
+
+$('wordIn').value = st.word || '';
+fullRender();
+})();
+</script>
+
+</body>
+</html>
